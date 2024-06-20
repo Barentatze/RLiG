@@ -60,26 +60,27 @@ class GANBLR:
         y = self._label_encoder.fit_transform(y).astype(int)
         d = DataUtils(x, y)
         self._d = d #DataUtils
-        self.k = k #k for kdb
+        self.k = k #k value for kdb
         self.batch_size = batch_size
         if verbose:
             print(f"warmup run:")
         history = self._warmup_run(warmup_epochs, verbose=verbose)
         syn_data = self._sample(verbose=0)
-        discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)]) #长度为2N的数组，前一半是1后一半是0
+        discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)]) #2N, first half 1, latter half 0. 1 for real, 0 for syn
+
         for i in range(epochs):
-            # discriminator_input = np.vstack([x, syn_data[:,:-1]])
-            # disc_input, disc_label = sample(discriminator_input, discriminator_label, frac=0.8)
-            # disc = self._discrim()
-            # d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1, verbose=0).history # discriminator fit
-            # prob_fake = disc.predict(x, verbose=0) #fake的概率，要看disc的实现
-            # ls = np.mean(-np.log(np.subtract(1, prob_fake))) # 1-prob_fake reward中的第二项
-            ls = np.mean(-np.log(1))  # Just 1
-            g_history = self._run_generator(loss=ls).history #看一下，和generator相关
+            discriminator_input = np.vstack([x, syn_data[:,:-1]]) #Real data, sampled data
+            disc_input, disc_label = sample(discriminator_input, discriminator_label, frac=0.8)
+            disc = self._discrim()
+            d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1, verbose=0).history # discriminator fit
+            prob_fake = disc.predict(x, verbose=0) #fake的概率，要看disc的实现
+            ls = np.mean(-np.log(np.subtract(1, prob_fake))) # 1-prob_fake reward中的第二项
+            # ls = np.mean(-np.log(1))  # Just 1
+            g_history = self._run_generator(loss=ls).history
             syn_data = self._sample(verbose=0) #sample syn data
             if verbose:
-                # print(f"Epoch {i+1}/{epochs}: G_loss = {g_history['loss'][0]:.6f}, G_accuracy = {g_history['accuracy'][0]:.6f}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}")
-                print(f"Epoch {i+1}/{epochs}: G_loss = {g_history['loss'][0]:.6f}, G_accuracy = {g_history['accuracy'][0]:.6f}")
+                print(f"Epoch {i+1}/{epochs}: G_loss = {g_history['loss'][0]:.6f}, G_accuracy = {g_history['accuracy'][0]:.6f}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}")
+                # print(f"Epoch {i+1}/{epochs}: G_loss = {g_history['loss'][0]:.6f}, G_accuracy = {g_history['accuracy'][0]:.6f}")
         return self
         
     def evaluate(self, x, y, model='lr') -> float:
@@ -174,7 +175,7 @@ class GANBLR:
             verbose = 1
         #basic varibles
         d = self._d #DataUtil 应该使用数据生成的，所以要看一下DataUtil是什么
-        feature_cards = np.array(d.feature_uniques)#特征的所有取值？
+        feature_cards = np.array(d.feature_uniques)#特征的所有取值
         #ensure sum of each constraint group equals to 1, then re concat the probs
         _idxs = np.cumsum([0] + d._kdbe.constraints_.tolist()) #这个应该是在生成所有的约束
         constraint_idxs = [(_idxs[i],_idxs[i+1]) for i in range(len(_idxs)-1)]
@@ -242,7 +243,7 @@ class GANBLR:
 
     def _run_generator(self, loss):
         d = self._d
-        ohex = d.get_kdbe_x(self.k)
+        ohex = d.get_kdbe_x(self.k)#获得一个高阶的？ Higher-order feature
         tf.keras.backend.clear_session()
         model = tf.keras.Sequential()
         model.add(tf.keras.layers.Dense(d.num_classes, input_dim=ohex.shape[1], activation='softmax',kernel_constraint=self.constraints))

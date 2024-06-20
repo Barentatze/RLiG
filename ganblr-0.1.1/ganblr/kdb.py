@@ -2,6 +2,7 @@ import numpy as np
 #import networkx as nx
 from pyitlib import discrete_random_variable as drv
 
+#创建KDB
 def build_graph(X, y, k=2):
   '''
   kDB algorithm
@@ -19,26 +20,30 @@ def build_graph(X, y, k=2):
   y_node  = num_features
 
   #util func
-  _x = lambda i:X[:,i]
-  _x2comb = lambda i,j:(X[:,i], X[:,j])
+  _x = lambda i:X[:,i] #第i个特征
+  _x2comb = lambda i,j:(X[:,i], X[:,j]) #第i和j个特征的数据组合
 
   #feature indexes desc sort by mutual information
+  #算相互依赖关系，然后降序排列
   sorted_feature_idxs = np.argsort([
-    drv.information_mutual(_x(i), y) 
+    drv.information_mutual(_x(i), y) #计算每个特征与目标变量y的互信息，并按互信息降序排序特征缩阴
     for i in range(num_features)
   ])[::-1]
 
   #start building graph
   edges = []
   for iter, target_idx in enumerate(sorted_feature_idxs):
+    #添加边
     target_node = x_nodes[target_idx]
     edges.append((y_node, target_node))
 
     parent_candidate_idxs = sorted_feature_idxs[:iter]
     if iter <= k:
+    #互信息少，直接添加
       for idx in parent_candidate_idxs:
         edges.append((x_nodes[idx], target_node))
     else:
+    #否则算一个互信息最大的特征索引添加
       first_k_parent_mi_idxs = np.argsort([
         drv.information_mutual_conditional(*_x2comb(i, target_idx), y)
         for i in parent_candidate_idxs
@@ -64,6 +69,7 @@ def build_graph(X, y, k=2):
 #   nx.draw_networkx_labels(graph, pos, font_size=20, font_family="sans-serif")
 
 
+#交叉表，体现频率分布
 def get_cross_table(*cols, apply_wt=False):
     '''   
     author: alexland
@@ -115,6 +121,7 @@ def get_cross_table(*cols, apply_wt=False):
     np.add.at(xt, idx, wt)
     return uniq_vals_all_cols, xt
 
+#不考虑目标变量的情况下的依赖关系，即每个变量对其他变量的依赖
 def _get_dependencies_without_y(variables, y_name, kdb_edges):
     ''' 
     evidences of each variable without y.
@@ -129,7 +136,7 @@ def _get_dependencies_without_y(variables, y_name, kdb_edges):
     '''
     dependencies = {}
     kdb_edges_without_y = [edge for edge in kdb_edges if edge[0] != y_name]
-    mi_desc_order = {t:i for i,(s,t) in enumerate(kdb_edges) if s == y_name}
+    mi_desc_order = {t:i for i,(s,t) in enumerate(kdb_edges) if s == y_name} # 键为源节点，值为它们在边缘列表中出现的顺序
     for x in variables:
         current_dependencies = [s for s,t in kdb_edges_without_y if t == x]
         if len(current_dependencies) >= 2:

@@ -148,8 +148,8 @@ class DataUtils:
         if self.__kdbe_x is not None:
             return self.__kdbe_x
         if self._kdbe == None:
-            self._kdbe = KdbHighOrderFeatureEncoder()
-            self._kdbe.fit(self.x, self.y, k=k)
+            self._kdbe = KdbHighOrderFeatureEncoder() #这里是创建类
+            self._kdbe.fit(self.x, self.y, k=k) #这里才是真的利用fit去创建出了一个KDB
         kdbex = self._kdbe.transform(self.x)
         if dense_format:
             kdbex = kdbex.todense()
