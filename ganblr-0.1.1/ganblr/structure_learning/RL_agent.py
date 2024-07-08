@@ -30,7 +30,7 @@ if T.backends.mps.is_available():
 
 
 class ReinforcementLearningAgent:
-    def __init__(self, alpha=0.1, gamma=0.9, epsilon=0.3, max_size=1000000, batch_size=256, data=None, state_dim=0,
+    def __init__(self, alpha=0.1, gamma=0.9, epsilon=0.3, max_size=1000000, batch_size=256, data_X=None, data_Y= None, state_dim=0,
                  action_dim=0, fc1_dim=0, fc2_dim=0, fc3_dim=0, ckpt_dir='./checkpoints/DDQN',
                  tau=0.005, ):
         #gamma 0.8 0.9
@@ -40,8 +40,8 @@ class ReinforcementLearningAgent:
         self.gamma = gamma  # The Discount Factor
         self.epsilon = epsilon  # The Possibility for Exploration
         self.max_size = max_size  # The max_size for Q-table
-        self.data = data  # The dataset for the Bayesian Network Learning
-        self.variables = list(data.columns.values) # The variables in the Baysian Network
+        self.data = data_X  # The dataset for the Bayesian Network Learning
+        self.variables = list(self.data.columns.values) # The variables in the Baysian Network
         self.done_bonus = 0.3 # The bonus of finishing forming up the Bayesian Structural Learning
 
         self.tabu_list = deque(maxlen=1000)

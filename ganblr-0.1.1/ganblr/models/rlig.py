@@ -83,7 +83,7 @@ class RLiG:
 
         score_buffer = StackBuffer()
         hc_agent = HillClimbSearch(data=x)
-        rl_agent = K2Agent(data_X= x, data_Y= y)
+        rl_agent = ReinforcementLearningAgent(data_X= x, data_Y= y)
 
         if verbose:
             print(f"warmup run:")
@@ -113,11 +113,11 @@ class RLiG:
             # Do a Reinforcement Learning
             # 这里Reinforcement Learning只是take_action, 具体的reward实现并不在这里
 
-            # Take a reinforcment learning step
-            # self.bayesian_network, action = rl_agent.estimate_once(
-            #     start_dag=self.bayesian_network) # Use Reinforcement Learning agent to take a step
+            # Take a reinforcement learning step
+            self.bayesian_network, action = rl_agent.estimate_once(
+                 start_dag=self.bayesian_network) # Use Reinforcement Learning agent to take a step
             # # fit the baysian structure, as for the generator
-            # self.bayesian_network.fit(x)
+            self.bayesian_network.fit(x)
 
             # Do a GAN
             # syn_data = self._sample(verbose=0)# The original sampling method in the ganblr
@@ -150,9 +150,10 @@ class RLiG:
             #         print(
             #             f"Epoch {i + 1}/{epochs}: G_loss = {g_history['loss'][0]:.6f}, G_accuracy = {g_history['accuracy'][0]:.6f}")
 
-            current_score = log_likelihood_score(self.bayesian_network, x)
+            current_score = log_likelihood_score(self.bayesian_network, x) #NaN: Divide by zero error
             reward = current_score - original_score
             original_score = current_score
+
 
             # Update the Q value using stack buffer
 
