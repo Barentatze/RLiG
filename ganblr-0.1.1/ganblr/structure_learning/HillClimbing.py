@@ -49,7 +49,7 @@ class HillClimbSearch(StructureEstimator):
 
     def __init__(self, data, use_cache=True, **kwargs):
         self.use_cache = use_cache
-
+        self.tabu_list = deque(maxlen=1000)
         super(HillClimbSearch, self).__init__(data, **kwargs)
 
     def _legal_operations(
@@ -57,7 +57,6 @@ class HillClimbSearch(StructureEstimator):
         model,
         score,
         structure_score,
-        tabu_list,
         max_indegree,
         black_list,
         white_list,
@@ -73,7 +72,7 @@ class HillClimbSearch(StructureEstimator):
         edges or to limit the search.
         """
 
-        tabu_list = set(tabu_list)
+        # tabu_list = set(tabu_list)
 
         # Step 1: Get all legal operations for adding edges.
         potential_new_edges = (
@@ -87,7 +86,7 @@ class HillClimbSearch(StructureEstimator):
             if not nx.has_path(model, Y, X):
                 operation = ("+", (X, Y))
                 if (
-                    (operation not in tabu_list)
+                    (operation not in self.tabu_list)
                     and ((X, Y) not in black_list)
                     and ((X, Y) in white_list)
                 ):
@@ -95,13 +94,14 @@ class HillClimbSearch(StructureEstimator):
                     new_parents = old_parents + [X]
                     if len(new_parents) <= max_indegree:
                         score_delta = score(Y, new_parents) - score(Y, old_parents)
+                        # - score(Y, old_parents)
                         score_delta += structure_score("+")
                         yield (operation, score_delta)
 
         # Step 2: Get all legal operations for removing edges
         for X, Y in model.edges():
             operation = ("-", (X, Y))
-            if (operation not in tabu_list) and ((X, Y) not in fixed_edges):
+            if (operation not in self.tabu_list) and ((X, Y) not in fixed_edges):
                 old_parents = model.get_parents(Y)
                 new_parents = [var for var in old_parents if var != X]
                 score_delta = score(Y, new_parents) - score(Y, old_parents)
@@ -116,7 +116,7 @@ class HillClimbSearch(StructureEstimator):
             ):
                 operation = ("flip", (X, Y))
                 if (
-                    ((operation not in tabu_list) and ("flip", (Y, X)) not in tabu_list)
+                    ((operation not in self.tabu_list) and ("flip", (Y, X)) not in self.tabu_list)
                     and ((X, Y) not in fixed_edges)
                     and ((Y, X) not in black_list)
                     and ((Y, X) in white_list)
@@ -140,7 +140,6 @@ class HillClimbSearch(StructureEstimator):
         scoring_method="k2score",
         start_dag=None,
         fixed_edges=set(),
-        tabu_length=100,
         max_indegree=None,
         black_list=None,
         white_list=None,
@@ -254,7 +253,7 @@ class HillClimbSearch(StructureEstimator):
         if max_indegree is None:
             max_indegree = float("inf")
 
-        tabu_list = deque(maxlen=tabu_length)
+        # tabu_list = deque(maxlen=tabu_length)
         current_model = start_dag
 
         if show_progress and config.SHOW_PROGRESS:
@@ -271,7 +270,6 @@ class HillClimbSearch(StructureEstimator):
                     current_model,
                     score_fn,
                     score.structure_prior_ratio,
-                    tabu_list,
                     max_indegree,
                     black_list,
                     white_list,
@@ -285,25 +283,24 @@ class HillClimbSearch(StructureEstimator):
                 break
             elif best_operation[0] == "+":
                 current_model.add_edge(*best_operation[1])
-                tabu_list.append(("-", best_operation[1]))
+                self.tabu_list.append(("-", best_operation[1]))
             elif best_operation[0] == "-":
                 current_model.remove_edge(*best_operation[1])
-                tabu_list.append(("+", best_operation[1]))
+                self.tabu_list.append(("+", best_operation[1]))
             elif best_operation[0] == "flip":
                 X, Y = best_operation[1]
                 current_model.remove_edge(X, Y)
                 current_model.add_edge(Y, X)
-                tabu_list.append(best_operation)
+                self.tabu_list.append(best_operation)
 
         # Step 3: Return if no more improvements or maximum iterations reached.
         return current_model
 
     def estimate_once(
         self,
-        scoring_method="k2score",
+        scoring_method="bicscore",
         start_dag=None,
         fixed_edges=set(),
-        tabu_length=100,
         max_indegree=None,
         black_list=None,
         white_list=None,
@@ -373,7 +370,7 @@ class HillClimbSearch(StructureEstimator):
             "aicscore": AICScore,
         }
 
-        if isinstance(scoring_method, str): #这里整个改成loglikelihood
+        if isinstance(scoring_method, str):
             score = supported_methods[scoring_method.lower()](data=self.data)
         else:
             score = scoring_method
@@ -412,19 +409,31 @@ class HillClimbSearch(StructureEstimator):
         if max_indegree is None:
             max_indegree = float("inf")
 
-        tabu_list = deque(maxlen=tabu_length)
+        # tabu_list = deque(maxlen=tabu_length)
+        # tabu_list = self.tabu_list
         current_model = start_dag
 
 
         # Step 2: For each iteration, find the best scoring operation and
         #         do that to the current model. If no legal operation is
         #         possible, sets best_operation=None.
+        # operations = self._legal_operations(
+        #         current_model,
+        #         score_fn,
+        #         score.structure_prior_ratio,
+        #         max_indegree,
+        #         black_list,
+        #         white_list,
+        #         fixed_edges,
+        #     )
+        # for operation in operations:
+        #     print(operation)
+
         best_operation, best_score_delta = max(
             self._legal_operations(
                 current_model,
                 score_fn,
                 score.structure_prior_ratio,
-                tabu_list,
                 max_indegree,
                 black_list,
                 white_list,
@@ -434,18 +443,22 @@ class HillClimbSearch(StructureEstimator):
             default=(None, None),
         )
 
+        # print("best delta bic: ", best_score_delta,"which is: ", best_operation, "tabu: ",self.tabu_list)
+
         if best_operation is None or best_score_delta < epsilon:
-            return current_model, best_operation
-        elif best_operation[0] == "+":
-            current_model.add_edge(*best_operation[1])
-            tabu_list.append(("-", best_operation[1]))
+            # return current_model, best_operation
+            return None #None
+        if best_operation[0] == "+":
+            # current_model.add_edge(*best_operation[1])
+            self.tabu_list.append(("-", best_operation[1]))
         elif best_operation[0] == "-":
-            current_model.remove_edge(*best_operation[1])
-            tabu_list.append(("+", best_operation[1]))
+            # current_model.remove_edge(*best_operation[1])
+            self.tabu_list.append(("+", best_operation[1]))
         elif best_operation[0] == "flip":
             X, Y = best_operation[1]
-            current_model.remove_edge(X, Y)
-            current_model.add_edge(Y, X)
-            tabu_list.append(best_operation)
+            # current_model.remove_edge(X, Y)
+            # current_model.add_edge(Y, X)
+            self.tabu_list.append(best_operation)
 
-        return current_model, best_operation
+        # return current_model, best_operation
+        return best_operation
