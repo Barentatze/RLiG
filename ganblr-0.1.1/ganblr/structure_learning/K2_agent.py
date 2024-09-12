@@ -33,20 +33,22 @@ if T.backends.mps.is_available():
 
 
 class K2Agent:
-# This class should include the K2 Algorithm and the memorizing functions
-    def __init__(self, alpha=0.1, gamma=0.9, epsilon=0.3, max_size=1000000, data=None, label = None):
-        #gamma 0.8 0.9
+    # This class should include the K2 Algorithm and the memorizing functions
+    def __init__(self, alpha=0.1, gamma=0.9, epsilon=0.3, max_size=1000000, data=None, label=None, greedy=1, log=True):
+        # gamma 0.8 0.9
 
         # Q(S,A) + a*(r*maxQ(S',A')-Q(S,A))
         self.alpha = alpha  # The Learning Rate
         self.gamma = gamma  # The Discount Factor
-        self.epsilon = epsilon  # The Possibility for Exploration
+        self.e_epsilon = epsilon  # The Possibility for Exploration
+        self.greedy = greedy  # The binary indicator for using greedy or random choice for exploration
         self.max_size = max_size  # The max_size for Q-table
-        self.data = data # For pgmpy part, need modification
-        self.X = data.iloc[:,:-1]  # The dataset for the Bayesian Network Learning
+        self.data = data  # For pgmpy part, need modification
+        self.X = data.iloc[:, :-1]  # The dataset for the Bayesian Network Learning
         self.Y = label  # The label for the dataset for the Bayesian Network Learning
-        self.variables = list(self.X.columns.values) # The variables in the Baysian Network
-        self.done_bonus = 0.3 # The bonus of finishing forming up the Bayesian Structural Learning
+        self.variables = list(self.X.columns.values)  # The variables in the Baysian Network
+        self.done_bonus = 0.3  # The bonus of finishing forming up the Bayesian Structural Learning
+        self.log = log
 
         self.tabu_list = deque(maxlen=1000)
 
@@ -62,12 +64,14 @@ class K2Agent:
     def remember(self, state, action, reward, state_):
         # Calculate maxQ(s',a'),exploration = False for maximum
         action_ = self.estimate_once(start_dag=state_)
-        #Update the Q-value
-        self.Q_table[(state, action)] = self.Q_table.get((state, action),0) + self.alpha * (reward + self.gamma *
-                                                                     self.Q_table.get((state_, action_),0) -
-                                                                     self.Q_table.get((state, action),0))
-        print(self.Q_table)
-
+        # Update the Q-value
+        self.Q_table[(state, action)] = self.Q_table.get((state, action), 0) + self.alpha * (reward + self.gamma *
+                                                                                             self.Q_table.get(
+                                                                                                 (state_, action_), 0) -
+                                                                                             self.Q_table.get(
+                                                                                                 (state, action), 0))
+        if self.log:
+            print(self.Q_table)
 
     def ordering_nodes(self):
         mutual_info_dict = {}
@@ -80,17 +84,16 @@ class K2Agent:
 
         return keys_only
 
-    def _available_actions(self,graph):#the graph should be a Bayesian Network
+    def _available_actions(self, graph):  # the graph should be a Bayesian Network
         available_list = []
-        for i,X in enumerate(self.node_list):
-            for Y in self.node_list[i+1:]:
-                if not graph.has_edge(Y,X):
+        for i, X in enumerate(self.node_list):
+            for Y in self.node_list[i + 1:]:
+                if not graph.has_edge(Y, X):
                     available_list.append((Y, X))
                 # else:
                 #     available_list.append(("-",(X,Y)))
 
         return available_list
-
 
     def _legal_operations(
             self,
@@ -116,9 +119,9 @@ class K2Agent:
 
         # Step 1: Get all legal operations for adding edges.
         potential_new_edges = (
-                set(self._available_actions(graph=model))
-                # - set(model.edges()) # Only the non-exist edge are added following the ordering
-                # - set([(Y, X) for (X, Y) in model.edges()])
+            set(self._available_actions(graph=model))
+            # - set(model.edges()) # Only the non-exist edge are added following the ordering
+            # - set([(Y, X) for (X, Y) in model.edges()])
         )
 
         for X, Y in potential_new_edges:
@@ -138,7 +141,6 @@ class K2Agent:
                         # - score(Y, old_parents)
                         score_delta += structure_score("+")
                         yield (operation, score_delta)
-
 
     def estimate_once(
             self,
@@ -257,35 +259,60 @@ class K2Agent:
         #         possible, sets best_operation=None.
 
         best_operation = None
-        best_score_delta = None
+        best_score_delta = float("-inf")
         # Select the best one in the Q_table
-        for (s,a),q_value in self.Q_table.items():
+        for (s, a), q_value in self.Q_table.items():
             if s == current_model:
                 if q_value > best_score_delta:
                     best_score_delta = q_value
                     best_operation = a
 
-        if best_operation == None:
-            print("Q-table Missed")
-            best_operation, best_score_delta = max(
-                self._legal_operations(
-                    current_model,
-                    score_fn,
-                    score.structure_prior_ratio,
-                    max_indegree,
-                    black_list,
-                    white_list,
-                    fixed_edges,
-                ),
-                key=lambda t: t[1],
-                default=(None, None),
-            )
+        if best_operation == None or best_score_delta < 0 or (np.random.random() < self.e_epsilon):
+            if self.greedy:
+                best_operation, best_score_delta = max(
+                    self._legal_operations(
+                        current_model,
+                        score_fn,
+                        score.structure_prior_ratio,
+                        max_indegree,
+                        black_list,
+                        white_list,
+                        fixed_edges,
+                    ),
+                    key=lambda t: t[1],
+                    default=(None, None),
+                )
+                if self.log:
+                    print("Generative state is taking a Hill Climbing Step")
+            else:
+                # Epsilon: a random action in the available list
+                action_list = []
+                for i in self._legal_operations(
+                        current_model,
+                        score_fn,
+                        score.structure_prior_ratio,
+                        max_indegree,
+                        black_list,
+                        white_list,
+                        fixed_edges,
+                ):
+                    action_list.append(i)
+                if (len(action_list) > 0):
+                    random_index = random.randint(0, len(action_list) - 1)
+                    best_operation, best_score_delta = action_list[random_index]
+                else:
+                    best_operation, best_score_delta = (None, None)
+
+                if self.log:
+                    print("Generative state is taking a Random Step: ",best_operation,best_score_delta)
         else:
-            print("Q-table Hitted")
+            if self.log:
+                print("Generative state is taking a RL Step using experience")
 
         # print("best delta bic: ", best_score_delta,"which is: ", best_operation, "tabu: ",self.tabu_list)
 
-        if best_operation is None or best_score_delta < epsilon:
+        # if best_operation is None or best_score_delta < epsilon:
+        if best_operation is None:
             return None  # None
         if best_operation[0] == "+":
             self.tabu_list.append(("-", best_operation[1]))

@@ -21,4 +21,4 @@ WORKDIR /ganblr
 #RUN wget https://files.pythonhosted.org/packages/c2/a6/e4097efcdcff218e5a2134ad06e633b93352e56087a22e5840267aca920b/ganblr-0.1.1.tar.gz
 #RUN tar -xzvf ganblr-0.1.1.tar.gz
 
-EXPOSE 22
+EXPOSE 22 6006

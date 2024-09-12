@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from pgmpy.metrics import log_likelihood_score
+from tqdm import tqdm
 
 from ..kdb import *
 from ..kdb import _add_uniform
@@ -36,7 +37,23 @@ def step(self, action):
     return
 
 
+def __hash__(self):
+    # 将节点和边的信息组合起来生成哈希值
+
+    return hash((frozenset(self.nodes()), frozenset(self.edges())))
+
+
+def __eq__(self, other):
+    # 判断两个网络是否相等
+
+    return isinstance(other, BayesianNetwork) and \
+        frozenset(self.nodes()) == frozenset(other.nodes()) and \
+        frozenset(self.edges()) == frozenset(other.edges())
+
+
 BayesianNetwork.step = step
+BayesianNetwork.__hash__ = __hash__
+BayesianNetwork.__eq__ = __eq__
 
 
 class RLiG:
@@ -54,7 +71,7 @@ class RLiG:
         self._ordinal_encoder = OrdinalEncoder(dtype=int, handle_unknown='use_encoded_value', unknown_value=-1)
         self._label_encoder = LabelEncoder()
 
-    def fit(self, x, y, k=0, batch_size=32, episodes=3, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=3):
+    def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=0):
         '''
         Fit the model to the given data.
 
@@ -86,7 +103,7 @@ class RLiG:
             discriminator and GAN Structure
 
         n: int, default=4
-            The definition of the n-steps in the n-SARSA
+            The definition of the n-steps in the generative states
 
         Returns
         -------
@@ -117,16 +134,19 @@ class RLiG:
         history = self._warmup_run(warmup_epochs, verbose=verbose)  # 在warmup run中创建了 KDB
 
         # Init the Bayesian Network
-        hc_agent = HillClimbSearch(data=self.data)
-        rl_agent = K2Agent(data=self.data, label=y)
-        for _ in range(episodes):
-            self.bayesian_network = BayesianNetwork()
+        hc_agent = HillClimbSearch(data=self.data, greedy=1, log=False)  # Remove the edge deletion action
+        rl_agent = K2Agent(data=self.data, label=y, greedy=0, epsilon=0.1,
+                           log=False)  # Chk if there is a deletion action
+        for episode in range(episodes):
+            self.bayesian_network = BayesianNetwork()  # Resetting the environment
             self.bayesian_network.add_nodes_from(self.variables)
             self.bayesian_network.add_node(self.label_node)
             for variable in self.variables[:-1]:
                 self.bayesian_network.add_edge(self.label_node, variable)
             self.bayesian_network.fit(self.data)
-            print(self.bayesian_network)
+            # print(self.bayesian_network)
+            # model_graphviz = self.bayesian_network.to_graphviz() # Testing code for graph init
+            # model_graphviz.draw(f"init.png", prog="dot")
             original_score = structure_score(model=self.bayesian_network, data=self.data, scoring_method="bic")
 
             for epoch in range(epochs):
@@ -148,13 +168,15 @@ class RLiG:
                     current_score = structure_score(model=next_bayesian, data=self.data, scoring_method="bic")
 
                     reward = current_score - original_score
-                    print("reward: ", current_score, "-", original_score, "=", reward)
+                    # print("reward: ", current_score, "-", original_score, "=", reward)
 
                     # Buffer it
-                    score_buffer.push((self.bayesian_network.copy(), best_action, reward,
-                                       next_bayesian.copy()))  # stackbuffer(S,A,R,S')
+                    if best_action != None:
+                        score_buffer.push((self.bayesian_network.copy(), best_action, reward,
+                                           next_bayesian.copy()))  # stackbuffer(S,A,R,S')
+
                     # Update the Step
-                    self.bayesian_network.step(action=best_action)  # replacement error
+                    self.bayesian_network.step(action=best_action)
                     self.bayesian_network.remove_cpds(*self.bayesian_network.get_cpds())
                     self.bayesian_network.fit(self.data)
                     original_score = current_score
@@ -183,7 +205,7 @@ class RLiG:
                     prob_fake = disc.predict(x_int, verbose=0)
                     ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
                     print(
-                        f"epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}")
+                        f"episode {episode}, epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}, Q-Table Size: {len(rl_agent.Q_table)}")
                 else:
                     ls = np.mean(-np.log(1))
 
@@ -192,8 +214,9 @@ class RLiG:
                 reward = current_score - original_score
                 original_score = current_score
 
-                score_buffer.push((current_bayesian.copy(), best_action, reward,
-                                   self.bayesian_network.copy()))  # stackbuffer(S,A,R,S')
+                if best_action != None:
+                    score_buffer.push((current_bayesian.copy(), best_action, reward,
+                                       self.bayesian_network.copy()))  # stackbuffer(S,A,R,S')
 
                 # if best_action is None:
                 #    continue
@@ -211,7 +234,11 @@ class RLiG:
                     state, action, reward, state_prime = score_buffer.pop()
                     # print(reward)
                     reward *= (1 - ls)
-                    rl_agent.remember(state=state, action=action, reward=reward, state_=state_prime)
+                    if action != None:
+                        rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(reward),
+                                          state_=deepcopy(state_prime))
+
+                # print("Q:", len(rl_agent.Q_table))
 
         return self
 
