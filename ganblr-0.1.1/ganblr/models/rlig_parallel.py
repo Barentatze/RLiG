@@ -1,6 +1,12 @@
+import multiprocessing
+import sys
+from collections import defaultdict
 from copy import deepcopy
+import logging
+from itertools import islice
 
 from pgmpy.metrics import log_likelihood_score
+from pympler import asizeof
 from tqdm import tqdm
 
 from ..kdb import *
@@ -21,6 +27,10 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import pandas as pd
 import networkx as nx
+
+num_parallel = 32
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
 
 
 def step(self, action):
@@ -56,7 +66,7 @@ BayesianNetwork.__hash__ = __hash__
 BayesianNetwork.__eq__ = __eq__
 
 
-class RLiG:
+class RLiG_Parallel:
     """
     The RLiG Model.
     """
@@ -127,113 +137,178 @@ class RLiG:
         self.k = k  # k for kdb
         self.batch_size = batch_size
 
-        score_buffer = StackBuffer()
+        # score_buffer = StackBuffer()
 
         if verbose:
             print(f"warmup run:")
-        history = self._warmup_run(warmup_epochs, verbose=verbose)  # 在warmup run中创建了 KDB
+        # history = self._warmup_run(warmup_epochs, verbose=verbose)  # 在warmup run中创建了 KDB
 
         # Init the Bayesian Network
         hc_agent = HillClimbSearch(data=self.data, greedy=1, log=False)  # Remove the edge deletion action
         rl_agent = K2Agent(data=self.data, label=y, greedy=0, epsilon=0.1,
                            log=False)  # Chk if there is a deletion action
-        for episode in range(episodes):
-            self.bayesian_network = BayesianNetwork()  # Resetting the environment
-            self.bayesian_network.add_nodes_from(self.variables)
-            self.bayesian_network.add_node(self.label_node)
-            for variable in self.variables[:-1]:
-                self.bayesian_network.add_edge(self.label_node, variable)
-            self.bayesian_network.fit(self.data)
-            # print(self.bayesian_network)
-            # model_graphviz = self.bayesian_network.to_graphviz() # Testing code for graph init
-            # model_graphviz.draw(f"init.png", prog="dot")
-            original_score = structure_score(model=self.bayesian_network, data=self.data, scoring_method="bic")
 
-            for epoch in range(epochs):
-                # Parallel start
-                # The distribution of n onto different CPU cores
+        # Get a lot of Q tables
+        def train(rl_agent, hc_agent, episode, epochs=100, gan=1, n=0, shared_list=None):
+            try:
+                history = self._warmup_run(warmup_epochs, verbose=verbose)
+                logging.info(f"start{episode}")
+                score_buffer = StackBuffer()
+                bayesian_network = BayesianNetwork()  # Resetting the environment
+                bayesian_network.add_nodes_from(self.variables)
+                bayesian_network.add_node(self.label_node)
+                for variable in self.variables[:-1]:
+                    bayesian_network.add_edge(self.label_node, variable)
+                bayesian_network.fit(self.data)
+                original_score = structure_score(model=bayesian_network, data=self.data, scoring_method="bic")
 
-                # Non-Generative States
-                for i in range(n):
-                    # HC Agent choose an action
-                    best_action = hc_agent.estimate_once(
-                        start_dag=self.bayesian_network)  # current_structure: Bayesian Network
-                    if best_action is None:
-                        break
-                    next_bayesian = deepcopy(self.bayesian_network)
+                for epoch in range(epochs):
+                    logging.info(f"start{episode}epoch{epoch}")
+                    # Non-Generative States
+                    for i in range(n):
+                        # HC Agent choose an action
+                        best_action = hc_agent.estimate_once(
+                            start_dag=bayesian_network)  # current_structure: Bayesian Network
+                        if best_action is None:
+                            break
+                        next_bayesian = deepcopy(bayesian_network)
 
-                    # next_bayesian take step
-                    next_bayesian.step(action=best_action)
-                    next_bayesian.remove_cpds(*next_bayesian.get_cpds())
-                    next_bayesian.fit(self.data)
-                    # current_score = log_likelihood_score(model=next_bayesian, data=x)  #-inf
-                    current_score = structure_score(model=next_bayesian, data=self.data, scoring_method="bic")
+                        # next_bayesian take step
+                        next_bayesian.step(action=best_action)
+                        next_bayesian.remove_cpds(*next_bayesian.get_cpds())
+                        next_bayesian.fit(self.data)
+                        # current_score = log_likelihood_score(model=next_bayesian, data=x)  #-inf
+                        current_score = structure_score(model=next_bayesian, data=self.data, scoring_method="bic")
 
+                        reward = current_score - original_score
+                        # print("reward: ", current_score, "-", original_score, "=", reward)
+
+                        # Buffer it
+                        if best_action != None:
+                            score_buffer.push((bayesian_network.copy(), best_action, reward,
+                                               next_bayesian.copy()))  # stackbuffer(S,A,R,S')
+
+                        # Update the Step
+                        bayesian_network.step(action=best_action)
+                        bayesian_network.remove_cpds(*bayesian_network.get_cpds())
+                        bayesian_network.fit(self.data)
+                        original_score = current_score
+
+                    # Take a reinforcement learning step, no reward feedback now
+                    best_action = rl_agent.estimate_once(
+                        start_dag=bayesian_network)  # Use Reinforcement Learning agent to take a step
+                    current_bayesian = deepcopy(bayesian_network)
+                    bayesian_network.step(action=best_action)
+                    bayesian_network.remove_cpds(*bayesian_network.get_cpds())
+                    bayesian_network.fit(self.data)
+
+                    # Feed into Ganblr and get the reward. Reward 需要归一化
+                    data_sampler = BayesianModelSampling(bayesian_network)  # Parameters: model
+                    syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
+                    syn_data = self._ordinal_encoder.transform(syn_data)
+
+                    discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
+                    # Generative State,ls is the reward, using reward to update the previous rewards
+                    if (gan == 1):  # Using Gan
+                        discriminator_input = np.vstack(
+                            [x_int, syn_data[:, :]])  # no label is included in forward_sample
+                        disc_input, disc_label = sample(discriminator_input, discriminator_label, frac=0.8)
+                        disc = self._discrim()
+                        d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1,
+                                             verbose=0).history  # discriminator fit
+                        prob_fake = disc.predict(x_int, verbose=0)
+                        ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
+                        logging.info(
+                            f"episode {episode}, epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}, Q-Table Size: {len(rl_agent.Q_table)}")
+                    else:
+                        ls = np.mean(-np.log(1))
+
+                    current_score = structure_score(model=bayesian_network, data=self.data,
+                                                    scoring_method="bic")  # NaN: Divide by zero error
                     reward = current_score - original_score
-                    # print("reward: ", current_score, "-", original_score, "=", reward)
-
-                    # Buffer it
-                    if best_action != None:
-                        score_buffer.push((self.bayesian_network.copy(), best_action, reward,
-                                           next_bayesian.copy()))  # stackbuffer(S,A,R,S')
-
-                    # Update the Step
-                    self.bayesian_network.step(action=best_action)
-                    self.bayesian_network.remove_cpds(*self.bayesian_network.get_cpds())
-                    self.bayesian_network.fit(self.data)
                     original_score = current_score
 
-                # Take a reinforcement learning step, no reward feedback now
-                best_action = rl_agent.estimate_once(
-                    start_dag=self.bayesian_network)  # Use Reinforcement Learning agent to take a step
-                current_bayesian = deepcopy(self.bayesian_network)
-                self.bayesian_network.step(action=best_action)
-                self.bayesian_network.remove_cpds(*self.bayesian_network.get_cpds())
-                self.bayesian_network.fit(self.data)
+                    if best_action != None:
+                        score_buffer.push((current_bayesian.copy(), best_action, reward,
+                                           bayesian_network.copy()))  # stackbuffer(S,A,R,S')
 
-                # Feed into Ganblr and get the reward. Reward 需要归一化
-                data_sampler = BayesianModelSampling(self.bayesian_network)  # Parameters: model
-                syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
-                syn_data = self._ordinal_encoder.transform(syn_data)
+                    # Update the Q value using stack buffer
+                    # StackBuffer -> Update -> RL Q-Table Buffer -> Sampling -> Learn
 
-                discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
-                # Generative State,ls is the reward, using reward to update the previous rewards
-                if (gan == 1):  # Using Gan
-                    discriminator_input = np.vstack([x_int, syn_data[:, :]])  # no label is included in forward_sample
-                    disc_input, disc_label = sample(discriminator_input, discriminator_label, frac=0.8)
-                    disc = self._discrim()
-                    d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1,
-                                         verbose=0).history  # discriminator fit
-                    prob_fake = disc.predict(x_int, verbose=0)
-                    ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
-                    print(
-                        f"episode {episode}, epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}, Q-Table Size: {len(rl_agent.Q_table)}")
+                    while not score_buffer.is_empty():
+                        state, action, reward, state_prime = score_buffer.pop()
+                        # print(reward)
+                        reward *= (1 - ls)
+                        if action != None:
+                            rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(reward),
+                                              state_=deepcopy(state_prime))
+
+                if shared_list is not None:
+                    shared_list.append((rl_agent.Q_table, deepcopy(bayesian_network)))
+
+                return
+
+            except Exception as e:
+                logging.info(f"Error in train function for episode {episode}: {e}")
+
+        episode = 0
+        while episode < episodes:
+
+            processes = []
+            results = []
+            updated_bns = []
+
+            # Distribute rl_agent and hc_agent
+
+            # queue = multiprocessing.Queue()
+            m = multiprocessing.Manager()
+            shared_list = m.list()
+            for i in range(num_parallel):
+                if episode < episodes:
+                    p = multiprocessing.Process(target=train,
+                                                args=(rl_agent, hc_agent, episode, epochs, gan, n, shared_list))
+                    episode += 1
+                    processes.append(p)
+                    p.start()
                 else:
-                    ls = np.mean(-np.log(1))
+                    continue
 
-                current_score = structure_score(model=self.bayesian_network, data=self.data,
-                                                scoring_method="bic")  # NaN: Divide by zero error
-                reward = current_score - original_score
-                original_score = current_score
+            for p in processes:
+                p.join()
 
-                if best_action != None:
-                    score_buffer.push((current_bayesian.copy(), best_action, reward,
-                                       self.bayesian_network.copy()))  # stackbuffer(S,A,R,S')
+            for result in shared_list:
+                q, bn = result
+                results.append(q)
+                updated_bns.append(bn)
 
-                # Parallel end
+            # Merge the rl_agent and hc_agent
 
-                # Update the Q value using stack buffer
-                # StackBuffer -> Update -> RL Q-Table Buffer -> Sampling -> Learn
+            temp_q_table = defaultdict(lambda: [0, 0])  # {key: [sum_q_values, count]}
+            merged_Q_table = {}
 
-                while not score_buffer.is_empty():
-                    state, action, reward, state_prime = score_buffer.pop()
-                    # print(reward)
-                    reward *= (1 - ls)
-                    if action != None:
-                        rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(reward),
-                                          state_=deepcopy(state_prime))
+            for result in results:  # 遍历每个进程的Q表
+                for key, q_value in result.items():
+                    temp_q_table[key][0] += q_value  # 累加Q值
+                    temp_q_table[key][1] += 1  # 记录次数
 
-                # print("Q:", len(rl_agent.Q_table))
+            # 计算加权平均
+            for key in temp_q_table:
+                merged_Q_table[key] = temp_q_table[key][0] / temp_q_table[key][1]
+
+            rl_agent.Q_table = deepcopy(merged_Q_table)
+
+            # Update the best bn
+            current_score = float("-inf")
+            for bayes in updated_bns:
+                temp_score = structure_score(model=bayes, data=self.data,
+                                             scoring_method="bic")
+                if temp_score >= current_score:
+                    current_score = temp_score
+                    self.bayesian_network = bayes
+
+            logging.info("updated")
+
+        history = self._warmup_run(warmup_epochs, verbose=verbose)
 
         return self
 

@@ -5,6 +5,7 @@ import warnings
 from ganblr import get_demo_data
 from ganblr.models import GANBLR
 from ganblr.models import RLiG
+from ganblr.models import RLiG_Parallel
 from ucimlrepo import fetch_ucirepo
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -59,10 +60,11 @@ def test_ganblr(name="adult"):
     # y: Label of the dataset.
 
     # model = GANBLR()
-    model = RLiG()
+    # model = RLiG()
+    model = RLiG_Parallel()
 
     start_time = time.time()
-    model.fit(x, y, episodes=100, k=1, epochs=40, n=3)
+    model.fit(x, y, episodes=60, k=1, epochs=40, n=3)
     end_time = time.time()
 
     model_graphviz = model.bayesian_network.to_graphviz()
@@ -95,7 +97,7 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["car", "nursery", "magic", "chess"]
+    available_datasets = ["shuttle"]
     # available_datasets = ["nursery"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)
