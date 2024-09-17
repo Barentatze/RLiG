@@ -64,7 +64,7 @@ def test_ganblr(name="adult"):
     model = RLiG_Parallel()
 
     start_time = time.time()
-    model.fit(x, y, episodes=60, k=1, epochs=40, n=3)
+    model.fit(x, y, episodes=100, k=1, epochs=40, n=0)
     end_time = time.time()
 
     model_graphviz = model.bayesian_network.to_graphviz()
@@ -97,7 +97,7 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["shuttle"]
+    available_datasets = ["pokerhand"]
     # available_datasets = ["nursery"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)

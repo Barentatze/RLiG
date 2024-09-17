@@ -80,6 +80,7 @@ class RLiG_Parallel:
         self.constraints = None
         self._ordinal_encoder = OrdinalEncoder(dtype=int, handle_unknown='use_encoded_value', unknown_value=-1)
         self._label_encoder = LabelEncoder()
+        self.bayesian_network = None
 
     def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=3):
         '''
