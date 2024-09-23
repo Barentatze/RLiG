@@ -2,6 +2,8 @@ import gc
 import time
 import warnings
 
+import pandas as pd
+
 from ganblr import get_demo_data
 from ganblr.models import GANBLR
 from ganblr.models import RLiG
@@ -28,34 +30,71 @@ def get_uci_data(name="adult"):
     elif name == "pokerhand":
         dataset = fetch_ucirepo(id=158)
     elif name == "shuttle":
-        dataset = fetch_ucirepo(id=148)
+        # dataset = fetch_ucirepo(id=148)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/shuttle.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "connect":
-        dataset = fetch_ucirepo(id=151)
+        # dataset = fetch_ucirepo(id=151)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/connect-4.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "chess":  # sensus;credit
-        dataset = fetch_ucirepo(id=22)
+        # dataset = fetch_ucirepo(id=22)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/chess.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "letter":  # letter recognition; small classification dataset
         dataset = fetch_ucirepo(id=59)
     elif name == "magic":
-        dataset = fetch_ucirepo(id=159)
+        # dataset = fetch_ucirepo(id=159)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/magic.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "nursery":
         dataset = fetch_ucirepo(id=76)
     elif name == "satellite":
-        dataset = fetch_ucirepo(id=146)
+        # dataset = fetch_ucirepo(id=146)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/satellite.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "car":
         dataset = fetch_ucirepo(id=19)
+    elif name == "letter-recog":
+        dataset = pd.read_csv('../Datasets/letter-recog.csv')
+        features = dataset.iloc[:,:-1]
+        targets = dataset.iloc[:,-1]
+        return features, targets
+    elif name == "localization-dm":
+        dataset = pd.read_csv('../Datasets/localization-dm.csv')
+        features = dataset.iloc[:,:-1]
+        targets = dataset.iloc[:,-1]
+        return features, targets
+    elif name == "sign":
+        dataset = pd.read_csv('../Datasets/sign.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     else:
         raise Exception("Please Check Your Dataset Name")
     df = dataset.data.original.dropna(axis=0)
+    features = dataset.data.features
+    targets = dataset.data.targets
+    # print(f"features: {x}")
+    # print(f"targets: {y}")
     # df = df.drop(df.columns[0], axis=1)
-    return df
-
+    return features, targets
+    # return df
 
 def test_ganblr(name="adult"):
-    df = get_uci_data(name=name)
 
-    # df = get_demo_data('adult')
-    # x, y = df.values[:,:-1], df.values[:,-1]
-    x, y = df.iloc[:, :-1], df.iloc[:, -1]
+    x, y = get_uci_data(name=name)
+    y = y.squeeze()
     # x: Dataset to fit the model.
     # y: Label of the dataset.
 
@@ -64,7 +103,7 @@ def test_ganblr(name="adult"):
     model = RLiG_Parallel()
 
     start_time = time.time()
-    model.fit(x, y, episodes=100, k=1, epochs=40, n=0)
+    model.fit(x, y, episodes=100, gan=1, k=1, epochs=30, n=1)
     end_time = time.time()
 
     model_graphviz = model.bayesian_network.to_graphviz()
@@ -91,13 +130,13 @@ def test_ganblr(name="adult"):
         f.write(f"Dataset: {name}\n")
         for model_name, result in results.items():
             f.write(f"{model_name}: {result}\n")
-    del model, df
-    gc.collect()
+
+
     return
 
 
 if __name__ == '__main__':
-    available_datasets = ["pokerhand"]
+    available_datasets = ["satellite"]
     # available_datasets = ["nursery"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)

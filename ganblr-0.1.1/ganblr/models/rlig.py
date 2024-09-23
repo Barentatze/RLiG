@@ -115,10 +115,16 @@ class RLiG:
             verbose = 1
         # self.variables = list(x.columns.values)
         self.data = pd.concat([x, y], axis=1)
-        print(self.data)
-        print(y)
-        self.variables = list(self.data.columns.values)
-        self.label_node = list(self.data.columns.values)[-1]
+        self.x = x
+        self.y = y
+        print(self.x)
+        print(self.y)
+        # self.variables = list(self.data.columns.values)
+        # self.label_node = list(self.data.columns.values)[-1]
+        self.variables = list(self.x.columns.values)
+        self.label_node = self.y.name
+        print(self.variables)
+        print(self.label_node)
         x_int = self._ordinal_encoder.fit_transform(x)
         y_int = self._label_encoder.fit_transform(y).astype(int)
         # Dataframe -> Numpy.ndarry
@@ -141,12 +147,12 @@ class RLiG:
             self.bayesian_network = BayesianNetwork()  # Resetting the environment
             self.bayesian_network.add_nodes_from(self.variables)
             self.bayesian_network.add_node(self.label_node)
-            for variable in self.variables[:-1]:
+            for variable in self.variables:
                 self.bayesian_network.add_edge(self.label_node, variable)
             self.bayesian_network.fit(self.data)
-            # print(self.bayesian_network)
-            # model_graphviz = self.bayesian_network.to_graphviz() # Testing code for graph init
-            # model_graphviz.draw(f"init.png", prog="dot")
+            print(self.bayesian_network)
+            model_graphviz = self.bayesian_network.to_graphviz() # Testing code for graph init
+            model_graphviz.draw(f"init.png", prog="dot")
             original_score = structure_score(model=self.bayesian_network, data=self.data, scoring_method="bic")
 
             for epoch in range(epochs):
@@ -205,7 +211,8 @@ class RLiG:
                     d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1,
                                          verbose=0).history  # discriminator fit
                     prob_fake = disc.predict(x_int, verbose=0)
-                    ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
+                    # ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
+                    ls = d_history['accuracy'][0]
                     print(
                         f"episode {episode}, epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}, Q-Table Size: {len(rl_agent.Q_table)}")
                 else:
