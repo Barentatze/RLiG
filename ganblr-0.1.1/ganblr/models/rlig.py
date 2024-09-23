@@ -200,6 +200,7 @@ class RLiG:
                 # Feed into Ganblr and get the reward. Reward 需要归一化
                 data_sampler = BayesianModelSampling(self.bayesian_network)  # Parameters: model
                 syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
+                print(syn_data)
                 syn_data = self._ordinal_encoder.transform(syn_data)
 
                 discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])

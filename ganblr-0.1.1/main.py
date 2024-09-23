@@ -67,13 +67,13 @@ def get_uci_data(name="adult"):
         dataset = fetch_ucirepo(id=19)
     elif name == "letter-recog":
         dataset = pd.read_csv('../Datasets/letter-recog.csv')
-        features = dataset.iloc[:,:-1]
-        targets = dataset.iloc[:,-1]
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
         return features, targets
     elif name == "localization-dm":
         dataset = pd.read_csv('../Datasets/localization-dm.csv')
-        features = dataset.iloc[:,:-1]
-        targets = dataset.iloc[:,-1]
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
         return features, targets
     elif name == "sign":
         dataset = pd.read_csv('../Datasets/sign.csv')
@@ -91,8 +91,8 @@ def get_uci_data(name="adult"):
     return features, targets
     # return df
 
-def test_ganblr(name="adult"):
 
+def test_ganblr(name="adult"):
     x, y = get_uci_data(name=name)
     y = y.squeeze()
     # x: Dataset to fit the model.
@@ -104,6 +104,7 @@ def test_ganblr(name="adult"):
 
     start_time = time.time()
     model.fit(x, y, episodes=100, gan=1, k=1, epochs=30, n=1)
+    # model.fit(x, y, k=0, epochs=10)
     end_time = time.time()
 
     model_graphviz = model.bayesian_network.to_graphviz()
@@ -131,12 +132,11 @@ def test_ganblr(name="adult"):
         for model_name, result in results.items():
             f.write(f"{model_name}: {result}\n")
 
-
     return
 
 
 if __name__ == '__main__':
-    available_datasets = ["satellite"]
+    available_datasets = ["pokerhand"]
     # available_datasets = ["nursery"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)
