@@ -28,7 +28,13 @@ def get_uci_data(name="adult"):
     elif name == "intrusion":
         dataset = fetch_ucirepo(id=942)  # Maybe the wrong one?
     elif name == "pokerhand":
-        dataset = fetch_ucirepo(id=158)
+        # dataset = fetch_ucirepo(id=158)
+        dataset = pd.read_csv('../Datasets/poker-hand-dm.csv')
+        dataset = dataset[dataset.iloc[:, -1].isin([0, 1])]
+        # print(dataset)
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "shuttle":
         # dataset = fetch_ucirepo(id=148)
         dataset = pd.read_csv('../Datasets/discretizedata-main/shuttle.csv')
@@ -103,7 +109,7 @@ def test_ganblr(name="adult"):
     model = RLiG_Parallel()
 
     start_time = time.time()
-    model.fit(x, y, episodes=100, gan=1, k=1, epochs=30, n=1)
+    model.fit(x, y, episodes=40, gan=1, k=1, epochs=30, n=1)
     # model.fit(x, y, k=0, epochs=10)
     end_time = time.time()
 
