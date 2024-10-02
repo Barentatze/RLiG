@@ -131,8 +131,8 @@ class RLiG_Parallel:
         self.data = pd.concat([x, y], axis=1)
         self.x = x
         self.y = y
-        print(self.x)
-        print(self.y)
+        # print(self.x)
+        # print(self.y)
         # self.variables = list(self.data.columns.values)
         # self.label_node = list(self.data.columns.values)[-1]
         self.variables = list(self.x.columns.values)
@@ -161,7 +161,7 @@ class RLiG_Parallel:
         # Get a lot of Q tables
         def train(rl_agent, hc_agent, episode, epochs=100, gan=1, n=0, shared_list=None):
             try:
-                if (gan==1):
+                if (gan == 1):
                     history = self._warmup_run(warmup_epochs, verbose=verbose)
                 score_buffer = StackBuffer()
                 bayesian_network = BayesianNetwork()  # Resetting the environment
@@ -266,7 +266,6 @@ class RLiG_Parallel:
                 logging.info(f"Error in train function for episode {episode}: {e}")
                 # continue
 
-
         episode = 0
         while episode < episodes:
 
@@ -296,6 +295,8 @@ class RLiG_Parallel:
             try:
                 for result in shared_list:
                     q, bn = result
+                    if bn == None:
+                        print("bn none")
                     results.append(q)
                     updated_bns.append(bn)
             except Exception as e:
@@ -322,6 +323,9 @@ class RLiG_Parallel:
             for bayes in updated_bns:
                 temp_score = structure_score(model=bayes, data=self.data,
                                              scoring_method="bic")
+                if self.bayesian_network is None:
+                    self.bayesian_network = updated_bns[0]
+
                 if temp_score >= current_score:
                     current_score = temp_score
                     self.bayesian_network = bayes
@@ -331,7 +335,6 @@ class RLiG_Parallel:
         history = self._warmup_run(warmup_epochs, verbose=verbose)
 
         return self
-
 
     def evaluate(self, x, y, model='lr') -> float:
         """
@@ -388,7 +391,6 @@ class RLiG_Parallel:
         pred = pipline.predict(x_test)  # TR
         return accuracy_score(y_test, pred)
 
-
     def sample(self, size=None, verbose=1) -> np.ndarray:
         """
         Generate synthetic data.
@@ -411,7 +413,6 @@ class RLiG_Parallel:
             ordinal_data[:, :-1])  # 因为在_sample中是按照序数编码格式，所以这一步是将序数编码格式转换为原格式
         origin_y = self._label_encoder.inverse_transform(ordinal_data[:, -1]).reshape(-1, 1)
         return np.hstack([origin_x, origin_y])
-
 
     def _sample(self, size=None, verbose=1) -> np.ndarray:
         # The sample need to be modified
@@ -489,7 +490,6 @@ class RLiG_Parallel:
 
         return sorted_result
 
-
     def _warmup_run(self, epochs, verbose=None):
         d = self._d
         tf.keras.backend.clear_session()
@@ -500,7 +500,6 @@ class RLiG_Parallel:
         self.__gen_weights = elr.get_weights()
         tf.keras.backend.clear_session()
         return history
-
 
     def _run_generator(self, loss):
         d = self._d
@@ -515,7 +514,6 @@ class RLiG_Parallel:
         self.__gen_weights = model.get_weights()
         tf.keras.backend.clear_session()
         return history
-
 
     def _discrim(self):
         model = tf.keras.Sequential()

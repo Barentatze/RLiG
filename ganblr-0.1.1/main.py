@@ -24,13 +24,17 @@ import networkx as nx
 # fetch dataset
 def get_uci_data(name="adult"):
     if name == "adult":
-        dataset = fetch_ucirepo(id=2)
+        # dataset = fetch_ucirepo(id=2)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/adult-dm.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "intrusion":
         dataset = fetch_ucirepo(id=942)  # Maybe the wrong one?
     elif name == "pokerhand":
         # dataset = fetch_ucirepo(id=158)
-        dataset = pd.read_csv('../Datasets/poker-hand-dm.csv')
-        dataset = dataset[dataset.iloc[:, -1].isin([0, 1])]
+        dataset = pd.read_csv('../Datasets/pokerhand_dm.csv')
+        # dataset = dataset[dataset.iloc[:, -1].isin([0, 1])]
         # print(dataset)
         features = dataset.iloc[:, :-1]
         targets = dataset.iloc[:, -1]
@@ -41,9 +45,20 @@ def get_uci_data(name="adult"):
         features = dataset.iloc[:, :-1]
         targets = dataset.iloc[:, -1]
         return features, targets
+    elif name == "loan":
+        # dataset = fetch_ucirepo(id=148)
+        dataset = pd.read_csv('../Datasets/discretizedata-main/loan-dm.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "connect":
         # dataset = fetch_ucirepo(id=151)
         dataset = pd.read_csv('../Datasets/discretizedata-main/connect-4.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
+    elif name == "credit":
+        dataset = pd.read_csv('../Datasets/discretizedata-main/creditcard-mod-dm-encode.csv')
         features = dataset.iloc[:, :-1]
         targets = dataset.iloc[:, -1]
         return features, targets
@@ -81,6 +96,11 @@ def get_uci_data(name="adult"):
         features = dataset.iloc[:, :-1]
         targets = dataset.iloc[:, -1]
         return features, targets
+    elif name == "covtype":
+        dataset = pd.read_csv('../Datasets/discretizedata-main/covtype_dm_encode.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "sign":
         dataset = pd.read_csv('../Datasets/sign.csv')
         features = dataset.iloc[:, :-1]
@@ -104,13 +124,20 @@ def test_ganblr(name="adult"):
     # x: Dataset to fit the model.
     # y: Label of the dataset.
 
+    import warnings
+    import logging
+    # from joblib import Parallel, delayed
+    logging.getLogger('tensorflow').setLevel(logging.ERROR)
+    logging.getLogger('pgmpy').setLevel(logging.ERROR)
+    warnings.filterwarnings("ignore")
+
     # model = GANBLR()
     # model = RLiG()
     model = RLiG_Parallel()
 
     start_time = time.time()
-    model.fit(x, y, episodes=40, gan=1, k=1, epochs=30, n=1)
-    # model.fit(x, y, k=0, epochs=10)
+    model.fit(x, y, episodes=60, gan=1, k=0, epochs=15, n=1)
+    # model.fit(x, y, k=1, epochs=50)
     end_time = time.time()
 
     model_graphviz = model.bayesian_network.to_graphviz()
@@ -142,7 +169,7 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["pokerhand"]
+    available_datasets = ["localization-dm"]
     # available_datasets = ["nursery"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)
