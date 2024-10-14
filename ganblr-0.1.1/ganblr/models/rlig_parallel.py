@@ -84,6 +84,7 @@ class RLiG_Parallel:
         self._ordinal_encoder = OrdinalEncoder(dtype=int, handle_unknown='use_encoded_value', unknown_value=-1)
         self._label_encoder = LabelEncoder()
         self.bayesian_network = None
+        self.best_score = 0
 
     def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=3):
         '''
@@ -320,6 +321,7 @@ class RLiG_Parallel:
 
             # Update the best bn
             current_score = float("-inf")
+            self.best_score = float("-inf")
             for bayes in updated_bns:
                 temp_score = structure_score(model=bayes, data=self.data,
                                              scoring_method="bic")
@@ -329,6 +331,7 @@ class RLiG_Parallel:
                 if temp_score >= current_score:
                     current_score = temp_score
                     self.bayesian_network = bayes
+                    self.best_score = current_score
 
             logging.info("updated")
 

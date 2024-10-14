@@ -152,7 +152,8 @@ def test_ganblr(name="adult"):
     results = {
         "Logistic Regression": lr_result,
         "MLP": mlp_result,
-        "Random Forest": rf_result  # not suitable
+        "Random Forest": rf_result,  # not suitable
+        "Best Score": model.best_score
     }
     print("Dataset:", name)
     print("Training time:", (end_time - start_time), "seconds")
@@ -169,8 +170,8 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["localization-dm"]
-    # available_datasets = ["nursery"]
+    # available_datasets = ["localization-dm"]
+    available_datasets = ["chess"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)
     for dataset_name in available_datasets:
