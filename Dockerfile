@@ -12,10 +12,10 @@ RUN apt install openssh-server wget vim -y
 RUN service ssh start
 
 #Copy Ganblr 0.1.1 folder
-COPY ganblr-0.1.1 /ganblr
+#COPY ganblr-0.1.1 /ganblr
 
 #Set the WORKDIR
-WORKDIR /ganblr
+#WORKDIR /ganblr
 
 ##Download the ganblr code
 #RUN wget https://files.pythonhosted.org/packages/c2/a6/e4097efcdcff218e5a2134ad06e633b93352e56087a22e5840267aca920b/ganblr-0.1.1.tar.gz
