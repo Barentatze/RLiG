@@ -1,30 +1,25 @@
 import gc
 import os
+import sys
 import time
 import warnings
 
 import pandas as pd
-from sklearn.preprocessing import OrdinalEncoder
 
-from ganblr import get_demo_data
-from ganblr.models import GANBLR
-from ganblr.models import RLiG
-from ganblr.models import RLiG_Parallel
+sys.path.append(os.path.abspath("/home/jifeng/PycharmProjects/unrestricted-GANBLR/ganblr-0.1.1"))
+
+from pgmpy.estimators import BicScore
+from pgmpy.metrics import structure_score
+from pgmpy.models import BayesianNetwork
+from pgmpy.sampling import BayesianModelSampling
+from sklearn.preprocessing import OrdinalEncoder, LabelEncoder
 from ucimlrepo import fetch_ucirepo
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+from ganblr.models import RLiG
 
 
-# # this is a discrete version of adult since GANBLR requires discrete data.
-# df = get_demo_data('adult')
-
-
-# init with naive bayes
-# reward function BIC loglike "840,3000" ls "0.73 0.65"
-# RL Mechanism "K2" "semi-rl"
-
-# fetch dataset
 def get_uci_data(name="adult"):
     if name == "adult":
         # dataset = fetch_ucirepo(id=2)
@@ -137,15 +132,6 @@ def get_uci_data(name="adult"):
     # return df
 
 
-def cdt_data_preparation(name="adult"):
-    x, y = get_uci_data(name=name)  # Pandas.core.frame.Dataframe
-    x = x.to_numpy()
-    ordinal_encoder = OrdinalEncoder(dtype=int, handle_unknown='use_encoded_value', unknown_value=-1)
-    x_int = ordinal_encoder.fit_transform(x).astype(int)
-    os.makedirs(f'../Baselines/GraN-DAG/uci_data/{name}/', exist_ok=True)
-    np.save(f'../Baselines/GraN-DAG/uci_data/{name}/data1.npy', x_int)
-
-
 def test_ganblr(name="adult"):
     x, y = get_uci_data(name=name)
     y = y.squeeze()
@@ -159,12 +145,10 @@ def test_ganblr(name="adult"):
     logging.getLogger('pgmpy').setLevel(logging.ERROR)
     warnings.filterwarnings("ignore")
 
-    # model = RLiG()
-    model = RLiG_Parallel()
-    print(x,y)
+    model = RLiG()
 
     start_time = time.time()
-    model.fit(x, y, episodes=60, gan=1, k=0, epochs=20, n=1)
+    model.fit(x, y, episodes=60, gan=1, k=0, epochs=15, n=1)
     # model.fit(x, y, k=1, epochs=50)
     end_time = time.time()
 
@@ -200,14 +184,69 @@ def test_ganblr(name="adult"):
     return
 
 
-if __name__ == '__main__':
-    available_datasets = ["covtype"]
-    # "car","nursery","letter",
-    # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
-    # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
-    print("Testing the following datasets:", available_datasets)
-    for dataset_name in available_datasets:
-        print("Start test: ", dataset_name)
+def test_ganblr(name="adult", method="gran"):
+    if method == "gran":
+        MODEL_PATH = f"./results_{method}/{name}/to-dag/DAG.npy"
+    elif method == "notears":
+        MODEL_PATH = f"./results_{method}/{name}/DAG_NOTEARS.npy"
+    elif method == "dag_gnn":
+        MODEL_PATH = f"./results_{method}/{name}/DAG_DAG_GNN.npy"
+    else:
+        raise TypeError("Unmatched Method")
 
-        test_ganblr(name=dataset_name)
-        # cdt_data_preparation(name=dataset_name)
+    x, y = get_uci_data(name=name)
+    y = y.squeeze()
+
+    import warnings
+    import logging
+    logging.getLogger('tensorflow').setLevel(logging.ERROR)
+    logging.getLogger('pgmpy').setLevel(logging.ERROR)
+    warnings.filterwarnings("ignore")
+
+    # load model from DAG
+    adj_matrix = np.load(MODEL_PATH)
+
+    model = RLiG()
+    model.fit(x, y, input_model=adj_matrix, episodes=1, gan=1, k=0, epochs=0, n=0)
+
+    # Illustrate
+    model_graphviz = model.bayesian_network.to_graphviz()
+    model_graphviz.draw(f"{method}_{name}.png", prog="dot")
+
+    # TSTR
+    lr_result = model.evaluate(x, y, model='lr')
+    mlp_result = model.evaluate(x, y, model='mlp')
+    rf_result = model.evaluate(x, y, model='rf')
+
+    # Results
+    results = {
+        "Best Score": model.best_score,
+        "Logistic Regression": lr_result,
+        "MLP": mlp_result,
+        "Random Forest": rf_result,  # not suitable
+    }
+
+    print("Dataset:", name)
+    for model_name, result in results.items():
+        print(f"{model_name}: {result}")
+
+    file_path = "running_result.txt"
+    with open(file_path, "a") as f:
+        f.write(f"Dataset: {name}\n")
+        for model_name, result in results.items():
+            f.write(f"{model_name}: {result}\n")
+
+    return
+
+
+if __name__ == '__main__':
+    # available_datasets = ["magic", "satellite", "loan", "connect", "credit", "localization-dm"]
+    # available_datasets = ["adult", "car", "chess", "connect", "credit", "letter", "loan", "magic", "nursery",
+    #                       "pokerhand"]
+    available_datasets = ["satellite"]
+    # methods = ["gran", "notears", "dag_gnn"]
+    methods = ["notears"]
+
+    for dataset_name in available_datasets:
+        for method in methods:
+            test_ganblr(name=dataset_name, method=method)

@@ -63,13 +63,14 @@ class K2Agent:
 
     def remember(self, state, action, reward, state_):
         # Calculate maxQ(s',a'),exploration = False for maximum
-        action_ = self.estimate_once(start_dag=state_)
+        # action_ = self.estimate_once(start_dag=state_)
         # Update the Q-value
-        self.Q_table[(state, action)] = self.Q_table.get((state, action), 0) + self.alpha * (reward + self.gamma *
-                                                                                             self.Q_table.get(
-                                                                                                 (state_, action_), 0) -
+
+        # Q(s,a) = Q(s,a) + a * (G_i - Q(s,a))
+        self.Q_table[(state, action)] = self.Q_table.get((state, action), 0) + self.alpha * (reward -
                                                                                              self.Q_table.get(
                                                                                                  (state, action), 0))
+
         if self.log:
             print(self.Q_table)
 
@@ -151,6 +152,7 @@ class K2Agent:
             black_list=None,
             white_list=None,
             epsilon=1e-4,
+            custom_Q_table=None,
     ):
         """
         Performs local hill climb search to estimates the `DAG` structure that
@@ -260,12 +262,20 @@ class K2Agent:
 
         best_operation = None
         best_score_delta = float("-inf")
-        # Select the best one in the Q_table
-        for (s, a), q_value in self.Q_table.items():
-            if s == current_model:
-                if q_value > best_score_delta:
-                    best_score_delta = q_value
-                    best_operation = a
+        if custom_Q_table is None:
+            # Select the best one in the Q_table
+            for (s, a), q_value in self.Q_table.items():
+                if s == current_model:
+                    if q_value > best_score_delta:
+                        best_score_delta = q_value
+                        best_operation = a
+        else:
+            for (s, a), q_value in custom_Q_table.items():
+                if s == current_model:
+                    if q_value > best_score_delta:
+                        best_score_delta = q_value
+                        best_operation = a
+
 
         if best_operation == None or best_score_delta < 0 or (np.random.random() < self.e_epsilon):
             if self.greedy:
@@ -304,7 +314,7 @@ class K2Agent:
                     best_operation, best_score_delta = (None, None)
 
                 if self.log:
-                    print("Generative state is taking a Random Step: ",best_operation,best_score_delta)
+                    print("Generative state is taking a Random Step: ", best_operation, best_score_delta)
         else:
             if self.log:
                 print("Generative state is taking a RL Step using experience")

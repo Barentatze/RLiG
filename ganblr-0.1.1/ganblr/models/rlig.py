@@ -25,7 +25,7 @@ import networkx as nx
 
 def step(self, action):
     if action is None:
-        return None
+        return
     elif action[0] == "+":
         self.add_edge(*action[1])
     elif action[0] == "-":
@@ -70,8 +70,13 @@ class RLiG:
         self.constraints = None
         self._ordinal_encoder = OrdinalEncoder(dtype=int, handle_unknown='use_encoded_value', unknown_value=-1)
         self._label_encoder = LabelEncoder()
+        self.beta = 0.9
+        self.beta_min = 0.1
+        self.beta_decay = 0.99
+        self.RLiG_Q_table = {}
 
-    def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=3):
+    def fit(self, x, y, k=0, input_model=None, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1,
+            n=3):
         '''
         Fit the model to the given data.
 
@@ -143,45 +148,57 @@ class RLiG:
         hc_agent = HillClimbSearch(data=self.data, greedy=1, log=False)  # Remove the edge deletion action
         rl_agent = K2Agent(data=self.data, label=y, greedy=0, epsilon=0.1,
                            log=False)  # Chk if there is a deletion action
+
         for episode in range(episodes):
+
             self.bayesian_network = BayesianNetwork()  # Resetting the environment
             self.bayesian_network.add_nodes_from(self.variables)
             self.bayesian_network.add_node(self.label_node)
             for variable in self.variables:
                 self.bayesian_network.add_edge(self.label_node, variable)
+
+            if input_model is not None:
+                for i in range(len(self.variables)):
+                    for j in range(len(self.variables)):
+                        if input_model[i][j] == 1:
+                            self.bayesian_network.add_edge(self.variables[i], self.variables[j])
+
             self.bayesian_network.fit(self.data)
             print(self.bayesian_network)
-            model_graphviz = self.bayesian_network.to_graphviz() # Testing code for graph init
+            model_graphviz = self.bayesian_network.to_graphviz()  # Testing code for graph init
             model_graphviz.draw(f"init.png", prog="dot")
             original_score = structure_score(model=self.bayesian_network, data=self.data, scoring_method="bic")
+            self.best_score = original_score
 
             for epoch in range(epochs):
                 # Parallel start
                 # The distribution of n onto different CPU cores
 
-                # Non-Generative States
                 for i in range(n):
                     # HC Agent choose an action
                     best_action = hc_agent.estimate_once(
                         start_dag=self.bayesian_network)  # current_structure: Bayesian Network
-                    if best_action is None:
-                        break
+
                     next_bayesian = deepcopy(self.bayesian_network)
 
                     # next_bayesian take step
                     next_bayesian.step(action=best_action)
                     next_bayesian.remove_cpds(*next_bayesian.get_cpds())
                     next_bayesian.fit(self.data)
-                    # current_score = log_likelihood_score(model=next_bayesian, data=x)  #-inf
                     current_score = structure_score(model=next_bayesian, data=self.data, scoring_method="bic")
 
-                    reward = current_score - original_score
+                    # Calculate the Penalty Term
+                    num_parameters = len(next_bayesian.get_cpds())
+                    log_n = np.log(len(self.data))
+                    non_gen_complexity_penalty = (num_parameters / 2) * log_n
+
+                    reward = (current_score - original_score) - non_gen_complexity_penalty
                     # print("reward: ", current_score, "-", original_score, "=", reward)
 
                     # Buffer it
-                    if best_action != None:
-                        score_buffer.push((self.bayesian_network.copy(), best_action, reward,
-                                           next_bayesian.copy()))  # stackbuffer(S,A,R,S')
+                    # print("Non-gen")
+                    score_buffer.push((self.bayesian_network.copy(), best_action, reward,
+                                       next_bayesian.copy()))  # stackbuffer(S,A,R,S')
 
                     # Update the Step
                     self.bayesian_network.step(action=best_action)
@@ -191,7 +208,8 @@ class RLiG:
 
                 # Take a reinforcement learning step, no reward feedback now
                 best_action = rl_agent.estimate_once(
-                    start_dag=self.bayesian_network)  # Use Reinforcement Learning agent to take a step
+                    start_dag=self.bayesian_network,
+                    custom_Q_table=self.RLiG_Q_table)  # Use Reinforcement Learning agent to take a step
                 current_bayesian = deepcopy(self.bayesian_network)
                 self.bayesian_network.step(action=best_action)
                 self.bayesian_network.remove_cpds(*self.bayesian_network.get_cpds())
@@ -204,6 +222,7 @@ class RLiG:
                 syn_data = self._ordinal_encoder.transform(syn_data)
 
                 discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
+
                 # Generative State,ls is the reward, using reward to update the previous rewards
                 if (gan == 1):  # Using Gan
                     discriminator_input = np.vstack([x_int, syn_data[:, :]])  # no label is included in forward_sample
@@ -212,7 +231,6 @@ class RLiG:
                     d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1,
                                          verbose=0).history  # discriminator fit
                     prob_fake = disc.predict(x_int, verbose=0)
-                    # ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
                     ls = d_history['accuracy'][0]
                     print(
                         f"episode {episode}, epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}, Q-Table Size: {len(rl_agent.Q_table)}")
@@ -221,27 +239,45 @@ class RLiG:
 
                 current_score = structure_score(model=self.bayesian_network, data=self.data,
                                                 scoring_method="bic")  # NaN: Divide by zero error
-                reward = current_score - original_score
+
+                # Calculate the Penalty Term
+                num_parameters = len(self.bayesian_network.get_cpds())
+                log_n = np.log(len(self.data))
+                gen_complexity_penalty = (num_parameters / 2) * log_n
+
+                reward = (current_score - original_score) - gen_complexity_penalty
+
                 original_score = current_score
 
-                if best_action != None:
-                    score_buffer.push((current_bayesian.copy(), best_action, reward,
-                                       self.bayesian_network.copy()))  # stackbuffer(S,A,R,S')
+                score_buffer.push((current_bayesian.copy(), best_action, reward,
+                                   self.bayesian_network.copy()))  # stackbuffer(S,A,R,S')
 
                 # Parallel end
 
                 # Update the Q value using stack buffer
                 # StackBuffer -> Update -> RL Q-Table Buffer -> Sampling -> Learn
 
+                state, action, _, state_prime = score_buffer.stack[0]
+                discount = rl_agent.gamma
+                G_t = 0
+                for i, (state, action, reward, state_prime) in enumerate(score_buffer.stack):
+                    G_t += (reward * (1 - ls)) * (discount ** i)
+
+                rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(G_t),
+                                  state_=deepcopy(state_prime))
+
+
+                # Hybrid Update RL with Stack
                 while not score_buffer.is_empty():
                     state, action, reward, state_prime = score_buffer.pop()
-                    # print(reward)
                     reward *= (1 - ls)
-                    if action != None:
-                        rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(reward),
-                                          state_=deepcopy(state_prime))
+                    if (state, action) in rl_agent.Q_table:
+                        self.RLiG_Q_table[(state, action)] = self.beta * reward + (1 - self.beta) * rl_agent.Q_table[
+                            (state, action)]
 
-                # print("Q:", len(rl_agent.Q_table))
+            # Beta Decay
+            if self.beta > self.beta_min:
+                self.beta = self.beta * self.beta_decay
 
         return self
 

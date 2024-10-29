@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import networkx as nx
 
-num_parallel = 16
+num_parallel = 24
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
 
@@ -38,7 +38,7 @@ error_log = open("error.txt", "a")
 
 def step(self, action):
     if action is None:
-        return None
+        return
     elif action[0] == "+":
         self.add_edge(*action[1])
     elif action[0] == "-":
@@ -85,6 +85,11 @@ class RLiG_Parallel:
         self._label_encoder = LabelEncoder()
         self.bayesian_network = None
         self.best_score = 0
+
+        self.beta = 0.1
+        self.beta_min = 0.1
+        self.beta_decay = 0.99
+        self.RLiG_Q_table = {}
 
     def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=3):
         '''
@@ -147,6 +152,8 @@ class RLiG_Parallel:
         self._d = d  # DataUtils
         self.k = k  # k for kdb
         self.batch_size = batch_size
+        merged_Q_table = {}
+        merged_policy_table = {}
 
         # score_buffer = StackBuffer()
 
@@ -174,29 +181,34 @@ class RLiG_Parallel:
                 original_score = structure_score(model=bayesian_network, data=self.data, scoring_method="bic")
 
                 for epoch in range(epochs):
-                    # Non-Generative States
-                    for i in range(n):
+                    # Parallel start
+                    # The distribution of n onto different CPU cores
+
+                    for i in range(n - 1):
                         # HC Agent choose an action
                         best_action = hc_agent.estimate_once(
                             start_dag=bayesian_network)  # current_structure: Bayesian Network
-                        if best_action is None:
-                            break
+
                         next_bayesian = deepcopy(bayesian_network)
 
                         # next_bayesian take step
                         next_bayesian.step(action=best_action)
                         next_bayesian.remove_cpds(*next_bayesian.get_cpds())
                         next_bayesian.fit(self.data)
-                        # current_score = log_likelihood_score(model=next_bayesian, data=x)  #-inf
                         current_score = structure_score(model=next_bayesian, data=self.data, scoring_method="bic")
 
-                        reward = current_score - original_score
+                        # Calculate the Penalty Term
+                        num_parameters = len(next_bayesian.get_cpds())
+                        log_n = np.log(len(self.data))
+                        non_gen_complexity_penalty = (num_parameters / 2) * log_n
+
+                        reward = (current_score - original_score) - non_gen_complexity_penalty
                         # print("reward: ", current_score, "-", original_score, "=", reward)
 
                         # Buffer it
-                        if best_action != None:
-                            score_buffer.push((bayesian_network.copy(), best_action, reward,
-                                               next_bayesian.copy()))  # stackbuffer(S,A,R,S')
+                        # print("Non-gen")
+                        score_buffer.push((bayesian_network.copy(), best_action, reward,
+                                           next_bayesian.copy()))  # stackbuffer(S,A,R,S')
 
                         # Update the Step
                         bayesian_network.step(action=best_action)
@@ -206,21 +218,24 @@ class RLiG_Parallel:
 
                     # Take a reinforcement learning step, no reward feedback now
                     best_action = rl_agent.estimate_once(
-                        start_dag=bayesian_network)  # Use Reinforcement Learning agent to take a step
+                        start_dag=bayesian_network,
+                        custom_Q_table=self.RLiG_Q_table)  # Use Reinforcement Learning agent to take a step
+                    # best_action = rl_agent.estimate_once(
+                    #     start_dag=bayesian_network)
                     current_bayesian = deepcopy(bayesian_network)
                     bayesian_network.step(action=best_action)
                     bayesian_network.remove_cpds(*bayesian_network.get_cpds())
                     bayesian_network.fit(self.data)
 
+                    # Feed into Ganblr and get the reward. Reward 需要归一化
+                    data_sampler = BayesianModelSampling(bayesian_network)  # Parameters: model
+                    syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
+                    syn_data = self._ordinal_encoder.transform(syn_data)
+
+                    discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
+
+                    # Generative State,ls is the reward, using reward to update the previous rewards
                     if (gan == 1):  # Using Gan
-                        # Feed into Ganblr and get the reward. Reward 需要归一化
-                        data_sampler = BayesianModelSampling(bayesian_network)  # Parameters: model
-                        syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
-                        syn_data = self._ordinal_encoder.transform(syn_data)
-
-                        discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
-                        # Generative State,ls is the reward, using reward to update the previous rewards
-
                         discriminator_input = np.vstack(
                             [x_int, syn_data[:, :]])  # no label is included in forward_sample
                         disc_input, disc_label = sample(discriminator_input, discriminator_label, frac=0.8)
@@ -228,38 +243,58 @@ class RLiG_Parallel:
                         d_history = disc.fit(disc_input, disc_label, batch_size=batch_size, epochs=1,
                                              verbose=0).history  # discriminator fit
                         prob_fake = disc.predict(x_int, verbose=0)
-                        # ls = np.mean(-np.log(np.subtract(1, prob_fake)))  # (1-prob_fake) reward中的第二项
                         ls = d_history['accuracy'][0]
-                        logging.info(
+                        print(
                             f"episode {episode}, epoch {epoch}, D_loss = {d_history['loss'][0]:.6f}, D_accuracy = {d_history['accuracy'][0]:.6f}, Q-Table Size: {len(rl_agent.Q_table)}")
                     else:
-                        ls = np.mean(1e-5)
-                        logging.info(
-                            f"episode {episode}, epoch {epoch}, Q-Table Size: {len(rl_agent.Q_table)}"
-                        )
+                        ls = np.mean(-np.log(1))
 
                     current_score = structure_score(model=bayesian_network, data=self.data,
                                                     scoring_method="bic")  # NaN: Divide by zero error
-                    reward = current_score - original_score
+
+                    # Calculate the Penalty Term
+                    num_parameters = len(bayesian_network.get_cpds())
+                    log_n = np.log(len(self.data))
+                    gen_complexity_penalty = (num_parameters / 2) * log_n
+
+                    reward = (current_score - original_score) - gen_complexity_penalty
+
                     original_score = current_score
 
-                    if best_action != None:
-                        score_buffer.push((current_bayesian.copy(), best_action, reward,
-                                           bayesian_network.copy()))  # stackbuffer(S,A,R,S')
+                    score_buffer.push((current_bayesian.copy(), best_action, reward,
+                                       bayesian_network.copy()))  # stackbuffer(S,A,R,S')
 
-                        # Update the Q value using stack buffer
-                        # StackBuffer -> Update -> RL Q-Table Buffer -> Sampling -> Learn
+                    # Parallel end
 
+                    # Update the Q value using stack buffer
+                    # StackBuffer -> Update -> RL Q-Table Buffer -> Sampling -> Learn
+
+                    state, action, _, state_prime = score_buffer.stack[0]
+                    discount = rl_agent.gamma
+                    G_t = 0
+                    # for i, (state, action, reward, state_prime) in enumerate(score_buffer.stack):
+                    #     G_t += (reward * (1 - ls)) * (discount ** i)
+                    for i, (state, action, reward, state_prime) in enumerate(score_buffer.stack):
+                        G_t += (reward * (1 - ls)) * (discount ** i)
+
+                    rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(G_t),
+                                      state_=deepcopy(state_prime))
+
+                    # Hybrid Update RL with Stack
                     while not score_buffer.is_empty():
                         state, action, reward, state_prime = score_buffer.pop()
-                        # print(reward)
                         reward *= (1 - ls)
-                        if action != None:
-                            rl_agent.remember(state=deepcopy(state), action=deepcopy(action), reward=deepcopy(reward),
-                                              state_=deepcopy(state_prime))
+                        if (state, action) in rl_agent.Q_table:
+                            self.RLiG_Q_table[(state, action)] = self.beta * reward + (1 - self.beta) * \
+                                                                 rl_agent.Q_table[
+                                                                     (state, action)]
 
                     if shared_list is not None:
-                        shared_list.append((rl_agent.Q_table, deepcopy(bayesian_network)))
+                        shared_list.append((rl_agent.Q_table, self.RLiG_Q_table, deepcopy(bayesian_network)))
+
+                # Beta Decay
+                if self.beta > self.beta_min:
+                    self.beta = self.beta * self.beta_decay
 
                 return
 
@@ -273,6 +308,7 @@ class RLiG_Parallel:
             processes = []
             results = []
             updated_bns = []
+            RLiG_Policy = []
 
             # Distribute rl_agent and hc_agent
 
@@ -295,10 +331,11 @@ class RLiG_Parallel:
             time.sleep(2)
             try:
                 for result in shared_list:
-                    q, bn = result
+                    q, policy, bn = result
                     if bn == None:
                         print("bn none")
                     results.append(q)
+                    RLiG_Policy.append(policy)
                     updated_bns.append(bn)
             except Exception as e:
                 print(f"Error{e}")
@@ -306,7 +343,6 @@ class RLiG_Parallel:
             # Merge the rl_agent and hc_agent
 
             temp_q_table = defaultdict(lambda: [0, 0])  # {key: [sum_q_values, count]}
-            merged_Q_table = {}
 
             for result in results:  # 遍历每个进程的Q表
                 for key, q_value in result.items():
@@ -315,9 +351,24 @@ class RLiG_Parallel:
 
             # 计算加权平均
             for key in temp_q_table:
-                merged_Q_table[key] = temp_q_table[key][0] / temp_q_table[key][1]
+                merged_Q_table[key] = ((temp_q_table[key][0] / temp_q_table[key][1]) + merged_Q_table[key]) / 2
 
             rl_agent.Q_table = deepcopy(merged_Q_table)
+
+            # Update RLiG Policy
+            temp_policy_table = defaultdict(lambda: [0, 0])  # {key: [sum_q_values, count]}
+
+            for policy in RLiG_Policy:  # 遍历每个进程的Q表
+                for key, q_value in policy.items():
+                    temp_policy_table[key][0] += q_value  # 累加Q值
+                    temp_policy_table[key][1] += 1  # 记录次数
+
+            # 计算加权平均
+            for key in temp_policy_table:
+                merged_policy_table[key] = ((temp_policy_table[key][0] / temp_policy_table[key][1]) +
+                                            merged_policy_table[key]) / 2
+
+            self.RLiG_Q_table = deepcopy(merged_policy_table)
 
             # Update the best bn
             current_score = float("-inf")
