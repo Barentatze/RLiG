@@ -143,14 +143,14 @@ class K2Agent:
                         yield (operation, score_delta)
 
         # Step 2: Get all legal operations for removing edges
-        # for X, Y in model.edges():
-        #     operation = ("-", (X, Y))
-        #     if (operation not in self.tabu_list) and ((X, Y) not in fixed_edges):
-        #         old_parents = model.get_parents(Y)
-        #         new_parents = [var for var in old_parents if var != X]
-        #         score_delta = score(Y, new_parents) - score(Y, old_parents)
-        #         score_delta += structure_score("-")
-        #         yield (operation, score_delta)
+        for X, Y in model.edges():
+            operation = ("-", (X, Y))
+            if (operation not in self.tabu_list) and ((X, Y) not in fixed_edges):
+                old_parents = model.get_parents(Y)
+                new_parents = [var for var in old_parents if var != X]
+                score_delta = score(Y, new_parents) - score(Y, old_parents)
+                score_delta += structure_score("-")
+                yield (operation, score_delta)
 
         # Step 3: Get all legal operations for flipping edges
         for X, Y in model.edges():

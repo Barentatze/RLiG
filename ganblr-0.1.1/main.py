@@ -178,7 +178,7 @@ def test_ganblr(name="adult"):
     print(x,y)
 
     start_time = time.time()
-    model.fit(x, y, episodes=40, gan=1, k=0, epochs=10, n=1)
+    model.fit(x, y, episodes=40, gan=1, k=0, epochs=5, n=1)
     # model.fit(x, y, k=1, epochs=50)
     end_time = time.time()
 
