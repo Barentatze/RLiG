@@ -91,6 +91,9 @@ class RLiG_Parallel:
         self.beta_decay = beta_decay
         self.RLiG_Q_table = {}
 
+    def get_policy(self):
+        return deepcopy(self.RLiG_Q_table)
+
     def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1,
             n=3):
         '''

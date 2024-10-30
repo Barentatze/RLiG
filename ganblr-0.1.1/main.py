@@ -166,7 +166,7 @@ def test_ganblr(name="adult"):
     warnings.filterwarnings("ignore")
 
     # model = RLiG()
-    model = RLiG_Parallel(beta=0.9,beta_decay=0.95)
+    model = RLiG_Parallel(beta=0.9,beta_decay=0.7)
     print(x,y)
 
     start_time = time.time()
@@ -207,7 +207,7 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["room"]
+    available_datasets = ["health"]
     # "car","chess", "room",
     # "car","nursery","letter",
     # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
