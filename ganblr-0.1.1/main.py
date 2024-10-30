@@ -42,6 +42,14 @@ def get_uci_data(name="adult"):
         features = dataset.iloc[:, :-1]
         targets = dataset.iloc[:, -1]
         return features, targets
+    elif name == "har":
+        # dataset = fetch_ucirepo(id=158)
+        dataset = pd.read_csv('../Datasets/har70_a.csv')
+        # dataset = dataset[dataset.iloc[:, -1].isin([0, 1])]
+        # print(dataset)
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "shuttle":
         # dataset = fetch_ucirepo(id=148)
         dataset = pd.read_csv('../Datasets/discretizedata-main/shuttle.csv')
@@ -170,7 +178,7 @@ def test_ganblr(name="adult"):
     print(x,y)
 
     start_time = time.time()
-    model.fit(x, y, episodes=60, gan=1, k=0, epochs=20, n=1)
+    model.fit(x, y, episodes=40, gan=1, k=0, epochs=10, n=1)
     # model.fit(x, y, k=1, epochs=50)
     end_time = time.time()
 
@@ -207,7 +215,7 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["health"]
+    available_datasets = ["adult"]
     # "car","chess", "room",
     # "car","nursery","letter",
     # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
