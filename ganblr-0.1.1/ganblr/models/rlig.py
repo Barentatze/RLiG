@@ -215,16 +215,17 @@ class RLiG:
                 self.bayesian_network.remove_cpds(*self.bayesian_network.get_cpds())
                 self.bayesian_network.fit(self.data)
 
-                # Feed into Ganblr and get the reward. Reward 需要归一化
-                data_sampler = BayesianModelSampling(self.bayesian_network)  # Parameters: model
-                syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
-                print(syn_data)
-                syn_data = self._ordinal_encoder.transform(syn_data)
+                if (gan == 1):
+                    # Feed into Ganblr and get the reward. Reward 需要归一化
+                    data_sampler = BayesianModelSampling(self.bayesian_network)  # Parameters: model
+                    syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
+                    print(syn_data)
+                    syn_data = self._ordinal_encoder.transform(syn_data)
 
-                discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
+                    discriminator_label = np.hstack([np.ones(d.data_size), np.zeros(d.data_size)])
 
                 # Generative State,ls is the reward, using reward to update the previous rewards
-                if (gan == 1):  # Using Gan
+                  # Using Gan
                     discriminator_input = np.vstack([x_int, syn_data[:, :]])  # no label is included in forward_sample
                     disc_input, disc_label = sample(discriminator_input, discriminator_label, frac=0.8)
                     disc = self._discrim()

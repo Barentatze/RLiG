@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import networkx as nx
 
-num_parallel = 24
+num_parallel = 16
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
 
@@ -74,7 +74,7 @@ class RLiG_Parallel:
     The RLiG Model.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, beta=0.9, beta_decay=0.99) -> None:
         self._d = None
         self.__gen_weights = None
         self.batch_size = None
@@ -86,12 +86,13 @@ class RLiG_Parallel:
         self.bayesian_network = None
         self.best_score = 0
 
-        self.beta = 0.1
+        self.beta = beta
         self.beta_min = 0.1
-        self.beta_decay = 0.99
+        self.beta_decay = beta_decay
         self.RLiG_Q_table = {}
 
-    def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1, n=3):
+    def fit(self, x, y, k=0, batch_size=32, episodes=2, epochs=100, warmup_epochs=1, verbose=1, gan=1,
+            n=3):
         '''
         Fit the model to the given data.
 
@@ -351,7 +352,7 @@ class RLiG_Parallel:
 
             # 计算加权平均
             for key in temp_q_table:
-                merged_Q_table[key] = ((temp_q_table[key][0] / temp_q_table[key][1]) + merged_Q_table[key]) / 2
+                merged_Q_table[key] = temp_q_table[key][0] / temp_q_table[key][1]
 
             rl_agent.Q_table = deepcopy(merged_Q_table)
 
@@ -365,21 +366,20 @@ class RLiG_Parallel:
 
             # 计算加权平均
             for key in temp_policy_table:
-                merged_policy_table[key] = ((temp_policy_table[key][0] / temp_policy_table[key][1]) +
-                                            merged_policy_table[key]) / 2
+                merged_policy_table[key] = temp_policy_table[key][0] / temp_policy_table[key][1]
 
             self.RLiG_Q_table = deepcopy(merged_policy_table)
 
             # Update the best bn
-            current_score = float("-inf")
-            self.best_score = float("-inf")
+            current_score = float("inf")
+            self.best_score = float("inf")
             for bayes in updated_bns:
                 temp_score = structure_score(model=bayes, data=self.data,
                                              scoring_method="bic")
                 if self.bayesian_network is None:
                     self.bayesian_network = updated_bns[0]
 
-                if temp_score >= current_score:
+                if temp_score < current_score:
                     current_score = temp_score
                     self.bayesian_network = bayes
                     self.best_score = current_score

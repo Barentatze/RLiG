@@ -48,6 +48,12 @@ def get_uci_data(name="adult"):
         features = dataset.iloc[:, :-1]
         targets = dataset.iloc[:, -1]
         return features, targets
+    elif name == "susytr":
+        # dataset = fetch_ucirepo(id=148)
+        dataset = pd.read_csv('../Datasets/susytr-dm10.csv')
+        features = dataset.iloc[:, :-1]
+        targets = dataset.iloc[:, -1]
+        return features, targets
     elif name == "loan":
         # dataset = fetch_ucirepo(id=148)
         dataset = pd.read_csv('../Datasets/discretizedata-main/loan-dm.csv')
@@ -160,7 +166,7 @@ def test_ganblr(name="adult"):
     warnings.filterwarnings("ignore")
 
     # model = RLiG()
-    model = RLiG_Parallel()
+    model = RLiG_Parallel(beta=0.9,beta_decay=0.95)
     print(x,y)
 
     start_time = time.time()
@@ -178,10 +184,10 @@ def test_ganblr(name="adult"):
     # 用自己的
     # 单开一个pipeline,onehot
     results = {
-        "Logistic Regression": lr_result,
+        "LR": lr_result,
         "MLP": mlp_result,
-        "Random Forest": rf_result,  # not suitable
-        "Best Score": model.best_score
+        "RF": rf_result,  # not suitable
+        "Score": model.best_score
     }
     print("Dataset:", name)
     print("Training time:", (end_time - start_time), "seconds")
@@ -194,20 +200,21 @@ def test_ganblr(name="adult"):
         for model_name, result in results.items():
             f.write(f"{model_name}: {result}\n")
 
-    del model
+    del model,model_graphviz
     gc.collect()
 
     return
 
 
 if __name__ == '__main__':
-    available_datasets = ["covtype"]
+    available_datasets = ["room"]
+    # "car","chess", "room",
     # "car","nursery","letter",
     # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
     # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)
     for dataset_name in available_datasets:
         print("Start test: ", dataset_name)
-
         test_ganblr(name=dataset_name)
+        gc.collect()
         # cdt_data_preparation(name=dataset_name)
