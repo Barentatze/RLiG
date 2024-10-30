@@ -215,7 +215,7 @@ def test_ganblr(name="adult"):
 
 
 if __name__ == '__main__':
-    available_datasets = ["adult"]
+    available_datasets = ["car"]
     # "car","chess", "room",
     # "car","nursery","letter",
     # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
