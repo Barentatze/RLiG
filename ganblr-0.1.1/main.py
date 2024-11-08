@@ -156,11 +156,11 @@ def cdt_data_preparation(name="adult"):
     x = x.to_numpy()
     ordinal_encoder = OrdinalEncoder(dtype=int, handle_unknown='use_encoded_value', unknown_value=-1)
     x_int = ordinal_encoder.fit_transform(x).astype(int)
-    os.makedirs(f'../Baselines/GraN-DAG/uci_data/{name}/', exist_ok=True)
-    np.save(f'../Baselines/GraN-DAG/uci_data/{name}/data1.npy', x_int)
+    os.makedirs(f'../Baselines/SOTA/GraN-DAG/uci_data/{name}/', exist_ok=True)
+    np.save(f'../Baselines/SOTA/GraN-DAG/uci_data/{name}/data1.npy', x_int)
 
 
-def test_ganblr(name="adult"):
+def test_ganblr(name="adult", epoch=40, n=1, episodes=48, beta=0.9, beta_decay=0.85):
     x, y = get_uci_data(name=name)
     y = y.squeeze()
     # x: Dataset to fit the model.
@@ -174,11 +174,11 @@ def test_ganblr(name="adult"):
     warnings.filterwarnings("ignore")
 
     # model = RLiG()
-    model = RLiG_Parallel(beta=0.9,beta_decay=0.7)
-    print(x,y)
+    model = RLiG_Parallel(beta=beta, beta_decay=beta_decay)
+    print(x, y)
 
     start_time = time.time()
-    model.fit(x, y, episodes=40, gan=1, k=0, epochs=5, n=1)
+    model.fit(x, y, episodes=episodes, gan=1, k=0, epochs=epoch, n=n)
     # model.fit(x, y, k=1, epochs=50)
     end_time = time.time()
 
@@ -208,14 +208,14 @@ def test_ganblr(name="adult"):
         for model_name, result in results.items():
             f.write(f"{model_name}: {result}\n")
 
-    del model,model_graphviz
+    del model, model_graphviz
     gc.collect()
 
     return
 
 
 if __name__ == '__main__':
-    available_datasets = ["car"]
+    available_datasets = ["health"]
     # "car","chess", "room",
     # "car","nursery","letter",
     # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
@@ -223,6 +223,6 @@ if __name__ == '__main__':
     print("Testing the following datasets:", available_datasets)
     for dataset_name in available_datasets:
         print("Start test: ", dataset_name)
-        test_ganblr(name=dataset_name)
-        gc.collect()
-        # cdt_data_preparation(name=dataset_name)
+        # test_ganblr(name=dataset_name, epoch=10, n=1, episodes=8, beta=0.9, beta_decay=1.0)  # 66 85 104 133 202 40 1
+        # gc.collect()
+        cdt_data_preparation(name=dataset_name)
