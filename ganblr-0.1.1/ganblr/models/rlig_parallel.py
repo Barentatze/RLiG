@@ -229,7 +229,7 @@ class RLiG_Parallel:
                     bayesian_network.remove_cpds(*bayesian_network.get_cpds())
                     bayesian_network.fit(self.data)
 
-                    # Feed into Ganblr and get the reward. Reward 需要归一化
+                    # Feed into Ganblr and get the reward.
                     data_sampler = BayesianModelSampling(bayesian_network)  # Parameters: model
                     syn_data = data_sampler.forward_sample(size=d.data_size).iloc[:, :-1]
                     syn_data = self._ordinal_encoder.transform(syn_data)
@@ -359,10 +359,10 @@ class RLiG_Parallel:
             # Update RLiG Policy
             temp_policy_table = defaultdict(lambda: [0, 0])  # {key: [sum_q_values, count]}
 
-            for policy in RLiG_Policy:  # 遍历每个进程的Q表
+            for policy in RLiG_Policy:
                 for key, q_value in policy.items():
-                    temp_policy_table[key][0] += q_value  # 累加Q值
-                    temp_policy_table[key][1] += 1  # 记录次数
+                    temp_policy_table[key][0] += q_value
+                    temp_policy_table[key][1] += 1
 
             # 计算加权平均
             for key in temp_policy_table:
