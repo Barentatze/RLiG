@@ -342,7 +342,6 @@ class RLiG_Parallel:
             except Exception as e:
                 print(f"Error{e}")
                 continue
-            # Merge the rl_agent and hc_agent
 
             temp_q_table = defaultdict(lambda: [0, 0])  # {key: [sum_q_values, count]}
 

@@ -15,15 +15,6 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
-
-# # this is a discrete version of adult since GANBLR requires discrete data.
-# df = get_demo_data('adult')
-
-
-# init with naive bayes
-# reward function BIC loglike "840,3000" ls "0.73 0.65"
-# RL Mechanism "K2" "semi-rl"
-
 # fetch dataset
 def get_uci_data(name="adult"):
     if name == "adult":
@@ -189,8 +180,6 @@ def test_ganblr(name="adult", epoch=40, n=1, episodes=48, beta=0.9, beta_decay=0
     mlp_result = model.evaluate(x, y, model='mlp')
     rf_result = model.evaluate(x, y, model='rf')
 
-    # 用自己的
-    # 单开一个pipeline,onehot
     results = {
         "LR": lr_result,
         "MLP": mlp_result,
