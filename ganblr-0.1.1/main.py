@@ -216,13 +216,9 @@ def test_ganblr(name="adult", epoch=40, n=1, episodes=48, beta=0.9, beta_decay=0
 
 if __name__ == '__main__':
     available_datasets = ["health"]
-    # "car","chess", "room",
-    # "car","nursery","letter",
-    # available_datasets = ["magic","satellite","loan","chess","pokerhand","connect","credit","adult","localization-dm"]
-    # "car""nursery", "shuttle", "chess", "magic" "pokerhand", "letter", "connect" (expects discrete values but received continuous values for label, and binary values for target)
     print("Testing the following datasets:", available_datasets)
     for dataset_name in available_datasets:
         print("Start test: ", dataset_name)
-        # test_ganblr(name=dataset_name, epoch=10, n=1, episodes=8, beta=0.9, beta_decay=1.0)  # 66 85 104 133 202 40 1
+        test_ganblr(name=dataset_name, epoch=10, n=1, episodes=8, beta=0.9, beta_decay=1.0)
         # gc.collect()
         cdt_data_preparation(name=dataset_name)
